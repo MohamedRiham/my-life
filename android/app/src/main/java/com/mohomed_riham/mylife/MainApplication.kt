@@ -1,4 +1,4 @@
-package com.mylife
+package com.mohomed_riham.mylife
 
 import android.app.Application
 import android.content.res.Configuration
