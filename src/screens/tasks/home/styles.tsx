@@ -43,6 +43,15 @@ export const createTaskStyles = (colors: AppColors) => StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
+  taskCardEndingSoon: {
+    borderColor: colors.danger,
+    borderWidth: 2,
+    shadowColor: colors.danger,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
+  },
   checkbox: {
     width: wp('7%'),
     height: wp('7%'),
@@ -60,10 +69,17 @@ export const createTaskStyles = (colors: AppColors) => StyleSheet.create({
     flex: 1,
     gap: hp('0.5%'),
   },
+  taskTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: wp('2%'),
+  },
   taskTitle: {
     color: colors.text,
     fontSize: 16,
     fontWeight: '700',
+    flexShrink: 1,
   },
   taskDescription: {
     color: colors.mutedText,
@@ -75,6 +91,20 @@ export const createTaskStyles = (colors: AppColors) => StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
+  },
+  taskScheduleEndingSoon: {
+    color: colors.danger,
+  },
+  endingSoonBadge: {
+    paddingHorizontal: wp('2%'),
+    paddingVertical: hp('0.35%'),
+    borderRadius: 8,
+    backgroundColor: colors.danger,
+  },
+  endingSoonBadgeText: {
+    color: colors.primaryText,
+    fontSize: 11,
+    fontWeight: '800',
   },
   iconButton: {
     width: 42,

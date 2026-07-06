@@ -3,17 +3,18 @@ import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-
 import { type NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppScreen } from '@/components/ui/AppScreen';
+import { AppTextInput } from '@/components/ui/AppTextInput';
 import { Routes } from '@/constants/Routes';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { useAppColors } from '@/hooks/useAppColors';
 import { type TaskStackParamList } from '@/navigation/types';
 import { cancelTaskEndReminderAsync, scheduleTaskEndReminderAsync } from '@/services/taskNotifications';
-import { type Task } from '@/types/models';
+import { type SubTask, type Task } from '@/types/models';
 import { formatTaskDateTime } from '@/utils/dateTime';
 import { createTaskDetailsStyles } from './styles';
 
@@ -29,6 +30,9 @@ export default function TaskDetailsScreen() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const [task, setTask] = useState<Task | null>(null);
+  const [subtasks, setSubtasks] = useState<SubTask[]>([]);
+  const [subtaskTitle, setSubtaskTitle] = useState('');
+  const [isAddingSubtask, setIsAddingSubtask] = useState(false);
 
   const loadTask = useCallback(async () => {
     if (!user) {
@@ -48,6 +52,13 @@ export default function TaskDetailsScreen() {
     }
 
     setTask(row);
+
+    const subtaskRows = await db.getAllAsync<SubTask>(
+      'SELECT * FROM subtasks WHERE task_id = ? AND user_id = ? ORDER BY is_completed ASC, updated_at DESC',
+      route.params.taskId,
+      user.id,
+    );
+    setSubtasks(subtaskRows);
   }, [db, navigation, route.params.taskId, showToast, user]);
 
   useFocusEffect(
@@ -79,6 +90,76 @@ export default function TaskDetailsScreen() {
 
     await loadTask();
   }, [db, loadTask, task, user]);
+
+  const addSubtask = useCallback(async () => {
+    if (!task || !user) {
+      return;
+    }
+
+    const trimmedTitle = subtaskTitle.trim();
+
+    if (!trimmedTitle) {
+      showToast('Give your subtask a title.', { variant: 'error' });
+      return;
+    }
+
+    setIsAddingSubtask(true);
+
+    try {
+      const now = new Date().toISOString();
+
+      await db.runAsync(
+        'INSERT INTO subtasks (task_id, user_id, title, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        task.id,
+        user.id,
+        trimmedTitle,
+        null,
+        now,
+        now,
+      );
+
+      setSubtaskTitle('');
+      showToast('Subtask added.', { variant: 'success' });
+      await loadTask();
+    } finally {
+      setIsAddingSubtask(false);
+    }
+  }, [db, loadTask, showToast, subtaskTitle, task, user]);
+
+  const toggleSubtask = useCallback(async (subtask: SubTask) => {
+    if (!user) {
+      return;
+    }
+
+    await db.runAsync(
+      'UPDATE subtasks SET is_completed = ?, updated_at = ? WHERE id = ? AND user_id = ?',
+      subtask.is_completed ? 0 : 1,
+      new Date().toISOString(),
+      subtask.id,
+      user.id,
+    );
+
+    await loadTask();
+  }, [db, loadTask, user]);
+
+  const confirmDeleteSubtask = useCallback((subtask: SubTask) => {
+    Alert.alert('Delete subtask?', `Remove "${subtask.title}" from this task?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (!user) {
+            return;
+          }
+
+          await db.runAsync('DELETE FROM subtasks WHERE id = ? AND user_id = ?', subtask.id, user.id);
+          showToast('Subtask deleted.', { variant: 'success' });
+          await loadTask();
+        },
+      },
+    ]);
+  }, [db, loadTask, showToast, user]);
 
   if (!task) {
     return (
@@ -122,6 +203,100 @@ export default function TaskDetailsScreen() {
         <View style={styles.section}>
           <Text style={styles.label}>End</Text>
           <Text style={styles.value}>{formatTaskDateTime(task.end_at)}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.subtaskHeader}>
+            <View>
+              <Text style={styles.label}>Subtasks</Text>
+              <Text style={styles.subtaskSummary}>
+                {subtasks.length
+                  ? `${subtasks.filter((subtask) => subtask.is_completed).length}/${subtasks.length} completed`
+                  : 'No subtasks yet'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.subtaskForm}>
+            <AppTextInput
+              label="New subtask"
+              onChangeText={setSubtaskTitle}
+              onSubmitEditing={addSubtask}
+              placeholder="Add a smaller step"
+              returnKeyType="done"
+              value={subtaskTitle}
+            />
+            <AppButton
+              loading={isAddingSubtask}
+              onPress={addSubtask}
+              title="Add subtask"
+              variant="secondary"
+            />
+          </View>
+
+          <View style={styles.subtaskList}>
+            {subtasks.map((subtask) => {
+              const isSubtaskCompleted = Boolean(subtask.is_completed);
+
+              return (
+                <View
+                  accessible={false}
+                  importantForAccessibility="no"
+                  key={subtask.id}
+                  style={styles.subtaskItem}
+                >
+                  <Pressable
+                    accessibilityHint={`Double tap to mark this subtask as ${isSubtaskCompleted ? 'pending' : 'completed'}.`}
+                    accessibilityLabel={`${subtask.title}, ${isSubtaskCompleted ? 'completed' : 'pending'} subtask`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: isSubtaskCompleted }}
+                    hitSlop={10}
+                    onPress={() => toggleSubtask(subtask)}
+                    style={[
+                      styles.subtaskCheckbox,
+                      isSubtaskCompleted ? styles.subtaskCheckboxChecked : null,
+                    ]}
+                  >
+                    {isSubtaskCompleted ? (
+                      <Ionicons
+                        color="#FFFFFF"
+                        importantForAccessibility="no"
+                        name="checkmark"
+                        size={16}
+                      />
+                    ) : null}
+                  </Pressable>
+                  <Text
+                    importantForAccessibility="no"
+                    style={[
+                      styles.subtaskTitle,
+                      isSubtaskCompleted ? styles.subtaskTitleCompleted : null,
+                    ]}
+                  >
+                    {subtask.title}
+                  </Text>
+                  <Pressable
+                    accessibilityHint="Double tap to delete this subtask."
+                    accessibilityLabel={`Delete subtask, ${subtask.title}`}
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    onPress={() => confirmDeleteSubtask(subtask)}
+                    style={({ pressed }) => [
+                      styles.subtaskDeleteButton,
+                      pressed ? styles.iconButtonPressed : null,
+                    ]}
+                  >
+                    <Ionicons
+                      color={colors.danger}
+                      importantForAccessibility="no"
+                      name="trash-outline"
+                      size={20}
+                    />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
         <AppButton

@@ -16,3 +16,9 @@ export type Task = {
   created_at: string;
   updated_at: string;
 };
+
+export type SubTask = Pick<Task, 'id' | 'user_id' | 'title' | 'description' | 'is_completed'> & {
+  task_id: number;
+  created_at: string;
+  updated_at: string;
+};
